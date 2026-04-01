@@ -1,6 +1,6 @@
 # Pipeline CNPJ — Airflow + Docker + PostgreSQL
 
-Pipeline mensal para transformação e carga dos dados públicos do **Cadastro Nacional da Pessoa Jurídica (CNPJ)** da Receita Federal, com execução orquestrada por **Apache Airflow** em ambiente **Docker** e armazenamento no **PostgreSQL**.
+Pipeline mensal para extração, transformação e carga dos dados públicos do **Cadastro Nacional da Pessoa Jurídica (CNPJ)** da Receita Federal, com execução orquestrada por **Apache Airflow** em ambiente **Docker** e armazenamento no **PostgreSQL**.
 
 O projeto foi estruturado para ser **clonável e reprodutível**, abaixo os detalhes técnicos para utilização. 
 
@@ -32,6 +32,7 @@ cnpj_airflow_pipeline/
 │  ├─ dag_cnpj.py
 │  └─ cnpj_pipeline/
 │     ├─ __init__.py
+│     ├─ extract_cnpj.py
 │     ├─ transform_cnpj.py
 │     └─ sql/
 │        └─ transform.sql
@@ -48,11 +49,11 @@ cnpj_airflow_pipeline/
 ### Principais arquivos
 
 - `dag_cnpj.py`: define o agendamento da pipeline no Airflow.
-- `transform_cnpj.py`: implementa as etapas de carga, filtragem, staging e execução do SQL final.
-- `transform.sql`: recria, trata e popula a tabela `cnpj_final`.
+- `extract_cnpj.py`: implementa a etapa de extração dos dados mais recentes da Receita Federal: https://arquivos.receitafederal.gov.br/index.php/s/gn672Ad4CF8N6TK?dir=/Dados/Cadastros/CNPJ
+- `transform_cnpj.py`: implementa as etapas de descompactar os arquivos, filtragem para São Paulo das tabelas maiores, carga e execução do SQL de transformação dos dados.
+- `transform.sql`: é acionada pelo script transform_cnpj.py, recria, trata e popula a tabela `cnpj_final`.
 - `cnpj_data/distritos.csv`: base auxiliar de CEPs e geolocalização usada para enriquecer a base final.
 - `criacao_tabelas.sql`: esse código sql deve ser rodado no postgres apenas 1x para criação das tabelas que serão populadas mensalmente pela carga da pipeline.
-
 
 
 ## Pré-requisitos
@@ -61,10 +62,9 @@ Para executar o projeto localmente, é necessário ter instalado:
 
 - **Docker Desktop** (Windows/Mac) ou Docker Engine + Docker Compose (Linux);
 - **Git**, para clonar o repositório;
-- acesso a um **PostgreSQL** já existente e acessível a partir dos containers do Airflow.
+- acesso a um **PostgreSQL** já existente e acessível a partir dos containers do Airflow (fora do docker)
 
 > O projeto **não exige instalação manual do Airflow** fora do Docker.
-
 
 
 ## Configuração do ambiente
@@ -147,22 +147,6 @@ cnpj_data/
 - manter também o arquivo `distritos.csv` nessa mesma pasta.
 
 
-
-## Como a pipeline funciona
-
-O arquivo transform_cnpj.py executa nessa ordem:
-
-1. conexão com o PostgreSQL via `banco_postgres`;
-2. limpeza das tabelas de staging;
-3. carga das tabelas pequenas;
-4. carga da base auxiliar `distritos.csv`;
-5. filtragem dos arquivos grandes para São Paulo capital;
-6. carga nas tabelas de staging;
-7. criação de índices auxiliares;
-8. `ANALYZE` nas tabelas de staging;
-9. execução do SQL final que recria a tabela `cnpj_final`.
-
-
 ## Agendamento da DAG
 
 A DAG `cnpj_transform_mensal` está configurada com cron de **toda segunda-feira às 17h**, mas usa uma verificação adicional para permitir a execução apenas quando aquela segunda-feira é a **última do mês**.
@@ -228,7 +212,7 @@ A base final contempla apenas **São Paulo capital**.
 
 ### 2. Tabela de sócios
 
-A transformação final **não trata a tabela de sócios**.
+O extract e a transformação final **não trata a tabela de sócios**.
 
 ### 3. Dependência de estrutura de staging no PostgreSQL
 
@@ -260,7 +244,6 @@ docker compose exec airflow-scheduler python -c "from cnpj_pipeline.transform_cn
 
 ## Possíveis evoluções futuras
 
-- automatizar a etapa de extração dos arquivos da Receita dentro da própria DAG;
 - expandir a pipeline para outros municípios ou para o Brasil inteiro;
 - adicionar testes automatizados e validações de qualidade dos dados.
 
